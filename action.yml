@@ -1,4 +1,4 @@
-name: Terraform Apply
+name: Kyler's Terraform Apply
 description: Terraform Apply
 inputs:
   location:
