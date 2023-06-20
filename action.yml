@@ -1,0 +1,145 @@
+name: Terraform Apply
+description: Terraform Apply
+inputs:
+  location:
+    description: Targeted location/environment
+    required: true
+  SSH_KEY: 
+    description: SSH Key for Git Clone
+    required: true
+  terraform_version:
+    description: Version of Terraform to use
+    required: true
+    default: 1.4.5
+
+runs:
+  using: "composite"
+  steps:
+    
+    - name: Banner for Download Env Var File
+      shell: bash
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Download Env Var File"
+        echo "########################"
+        echo ""
+        
+    - name: Download Env Var File
+      id: download-env-vars
+      uses: actions/download-artifact@v3
+      with:
+        name: env-cache-${{ github.run_id }}-${{ inputs.location }}
+    
+    - name: Read Env Vars
+      id: read-env-vars
+      shell: bash
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Read Env Vars"
+        echo "########################"
+        echo ""
+        
+        cat env.vars >> $GITHUB_ENV
+
+    - name: Prep SSH Key
+      shell: bash
+      id: prep_ssh_key
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Prep SSH Key"
+        echo "########################"
+        echo ""
+        
+        mkdir -p ~/.ssh
+        echo "${{ inputs.SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        touch ~/.ssh/known_hosts
+        o=`ssh-keygen -F github.com || ssh-keyscan github.com >> ~/.ssh/known_hosts`
+        git config --global url."git@github.com:".insteadOf "https://github.com/"
+
+    - name: Banner for Install Terraform
+      shell: bash
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Install Terraform"
+        echo "########################"
+        echo ""
+        
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ inputs.terraform_version }}
+
+    - name: Banner for Azure Login
+      shell: bash
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Azure Login"
+        echo "########################"
+        echo ""
+        
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        tenant-id: ${{ env.az_tenant_id }}
+        client-id: ${{ env.az_client_id }}
+        subscription-id: ${{ env.az_subscription_id }}
+
+    - name: Terraform Init
+      shell: bash
+      id: init
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Terraform Init"
+        echo "########################"
+        echo ""
+        
+        # If the state file name is not set, use the solution name
+        if [ -z ${tf_state_filename} ]; then
+          echo "State file name not set, using solution name"
+          tf_state_filename=${solution_name}
+        else
+          echo "State file name set, using ${tf_state_filename}"
+          tf_state_filename=${tf_state_filename}
+        fi
+        
+        # Terraform init
+        terraform init \
+          -input=false \
+          -backend-config="resource_group_name=${tf_storage_resource_group_name}" \
+          -backend-config="storage_account_name=${tf_storage_account_name}" \
+          -backend-config="container_name=${tf_storage_container_name}" \
+          -backend-config="key=${tf_state_filename}.tfstate"
+
+    - name: Banner for Download Terraform Cache File
+      shell: bash
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Download Terraform Cache File"
+        echo "########################"
+        echo ""
+        
+    - name: Download Terraform Cache File
+      id: download-cache
+      uses: actions/download-artifact@v3
+      with:
+        name: tf-cache-${{ github.run_id }}-${{ inputs.location }}
+
+    - name: Terraform Apply
+      id: apply
+      shell: bash
+      run: |
+        echo ""
+        echo "########################"
+        echo "## Terraform Apply"
+        echo "########################"
+        echo ""
+        
+        terraform apply -input=false tf.plan
